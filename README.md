@@ -107,6 +107,23 @@ docker compose down                            # stop, keep data
 docker compose down -v                         # stop and DELETE all data
 ```
 
+Point of sale
+-------------
+
+The TakePOS module is not enabled by default: a shop needs its own setup
+(terminals, cash and bank accounts, default customer).
+
+1. Create the accounts payments go to: Bank/Cash > New financial account
+   (e.g. a "Cash" account of type cash, and a bank account for cards).
+2. Enable the module: Home > Setup > Modules/Applications > TakePOS. Dolibarr
+   also enables the modules it needs (Banks & Cash, Invoices, Products,
+   Categories).
+3. Configure it (the module's setup page, Terminal tab): the default
+   customer for anonymous sales and the account for each payment method
+   (cash, card, cheque); the warehouse too if the Stocks module is on.
+4. Open it from the TakePOS menu. Sales are regular customer invoices, paid
+   into the configured accounts.
+
 Backups
 -------
 
