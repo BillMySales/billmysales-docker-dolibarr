@@ -1,0 +1,28 @@
+# Mount a module from a local directory into htdocs/custom, editable live
+# (changes apply on the next request). The module is not enabled
+# automatically: enable it in Home > Setup > Modules.
+#
+# In .env:
+#   COMPOSE_FILE=compose.yaml:overrides/module.yaml
+#   MODULE_PATH=../my-module   # module source, relative to compose.yaml
+#   MODULE_NAME=mymodule       # directory name under htdocs/custom
+
+x-module: &module ${MODULE_PATH:?Set MODULE_PATH in .env}:/var/www/dolibarr/htdocs/custom/${MODULE_NAME:?Set MODULE_NAME in .env}
+
+services:
+  dolibarr:
+    volumes:
+      - *module
+  # Caddy serves the module's static files (CSS, JS, images).
+  caddy:
+    volumes:
+      - ${MODULE_PATH}:/var/www/dolibarr/htdocs/custom/${MODULE_NAME}:ro
+  setup:
+    volumes:
+      - *module
+  cron:
+    volumes:
+      - *module
+  backup:
+    volumes:
+      - *module

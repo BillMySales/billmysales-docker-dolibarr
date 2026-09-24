@@ -1,0 +1,70 @@
+# Caddy in front of the Dolibarr PHP-FPM container.
+# Docs: https://caddyserver.com/docs/caddyfile/directives/php_fastcgi
+{
+	# No admin API: config is static, reloads happen by restarting the container.
+	admin off
+
+	servers {
+		# Behind a reverse proxy on a private network, log the real client IP
+		# (X-Forwarded-For) and trust X-Forwarded-Proto for HTTPS detection.
+		trusted_proxies static private_ranges
+	}
+}
+
+(dolibarr) {
+	# Code only: documents live outside the web root and are served by
+	# document.php / viewimage.php.
+	root * /var/www/dolibarr/htdocs
+	encode zstd gzip
+
+	# Same variable as upload_max_filesize/post_max_size in config/php/php.ini.
+	request_body {
+		max_size {$UPLOAD_MAX_SIZE}
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	route {
+		# Hide dotfiles, except .well-known.
+		@hidden {
+			path /.*
+			not path /.well-known/*
+		}
+		respond @hidden 403
+
+		# Configuration, and the installer (installs and upgrades run from the
+		# command line in `setup`).
+		@private path /conf/* /install/*
+		respond @private 403
+
+		@sensitive path_regexp \.(log|sql|sh|lock|dist|md)$
+		respond @sensitive 403
+
+		php_fastcgi dolibarr:9000
+
+		@static path *.css *.js *.mjs *.gif *.ico *.jpg *.jpeg *.png *.svg *.webp *.avif *.woff *.woff2 *.ttf *.eot
+		header @static Cache-Control "public, max-age=604800"
+		file_server
+	}
+}
+
+# Public site. SITE_ADDRESS is ":80" for plain HTTP (local, or behind another
+# proxy) or a domain name, which makes Caddy obtain and renew a certificate
+# automatically ("localhost" uses Caddy's internal CA).
+{$SITE_ADDRESS} {
+	import dolibarr
+	log {
+		output stdout
+	}
+}
+
+# Internal-only site (port not published) for the container healthcheck, so it
+# works whatever SITE_ADDRESS is.
+:8080 {
+	import dolibarr
+}

@@ -1,0 +1,254 @@
+# Dolibarr stack: Caddy + Dolibarr (PHP-FPM, own image) + MariaDB, with a
+# setup job, scheduled jobs and optional backups and Mailpit.
+#
+# Quick start (development):
+#   cp .env.dev.example .env
+#   docker compose up -d
+#   docker compose logs -f setup   # wait for "==> Done"
+#
+# Production: start from .env.prod.example instead. See README.md.
+#
+# Required variables have no default: compose refuses to start without them.
+
+name: ${COMPOSE_PROJECT_NAME:-dolibarr}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-3}"
+
+# Dolibarr image, built from image/Dockerfile (php:<ver>-fpm-alpine + the
+# official release). Used by the app, setup and cron services.
+x-doli-image: &doli-image
+  image: ${DOLI_IMAGE:-dolibarr-fpm}:${DOLI_VERSION:-24.0.1}-php${PHP_VERSION:-8.5}
+  build:
+    context: ./image
+    args:
+      PHP_VERSION: ${PHP_VERSION:-8.5}
+      DOLI_VERSION: ${DOLI_VERSION:-24.0.1}
+      # Checksum of the default version; set it for another version (or empty to skip).
+      DOLI_SHA256: ${DOLI_SHA256-cd5cb03c3f927007c7e4c63a02ebdebdcf81efd378603729bbcf6991ffa1b9c4}
+
+# Environment shared by PHP-FPM, setup and cron.
+x-doli-env: &doli-env
+  DOLI_URL: ${DOLI_URL:?Set DOLI_URL in .env (e.g. https://erp.example.com)}
+  DOLI_ADMIN_LOGIN: ${DOLI_ADMIN_LOGIN:-admin}
+  PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-256M}
+  PHP_MAX_EXECUTION_TIME: ${PHP_MAX_EXECUTION_TIME:-300}
+  PHP_TIMEZONE: ${PHP_TIMEZONE:-America/Santiago}
+  UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-64M}
+
+# Files mounted in PHP-FPM, setup and cron.
+x-doli-volumes: &doli-volumes
+  - code:/var/www/dolibarr
+  - documents:/var/www/documents
+  - ./config/php/php.ini:/usr/local/etc/php/conf.d/zz-stack.ini:ro
+  - ./scripts:/usr/local/share/stack/scripts:ro
+
+services:
+  db:
+    image: mariadb:${MARIADB_VERSION:-12.3}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-dolibarr}
+      MARIADB_USER: ${DB_USER:-dolibarr}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-1g}
+
+  # PHP-FPM with Dolibarr. Not published; Caddy talks to it on port 9000.
+  dolibarr:
+    <<: *doli-image
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *doli-env
+      PHP_FPM_MAX_CHILDREN: ${PHP_FPM_MAX_CHILDREN:-10}
+      PHP_FPM_START_SERVERS: ${PHP_FPM_START_SERVERS:-2}
+      PHP_FPM_MIN_SPARE_SERVERS: ${PHP_FPM_MIN_SPARE_SERVERS:-1}
+      PHP_FPM_MAX_SPARE_SERVERS: ${PHP_FPM_MAX_SPARE_SERVERS:-4}
+      PHP_FPM_MAX_REQUESTS: ${PHP_FPM_MAX_REQUESTS:-500}
+    # Lets Dolibarr reach services on the host (e.g. an app running locally)
+    # at http://host.docker.internal:<port>, also on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - code:/var/www/dolibarr
+      - documents:/var/www/documents
+      - ./config/php/php.ini:/usr/local/etc/php/conf.d/zz-stack.ini:ro
+      - ./config/php/fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-stack.conf:ro
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${DOLI_MEMORY_LIMIT:-1g}
+
+  caddy:
+    image: caddy:${CADDY_VERSION:-2.11}-alpine
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      dolibarr:
+        condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-64M}
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-80}:80"
+      - "${HTTP_BIND:-127.0.0.1}:${HTTPS_PORT:-443}:443"
+      - "${HTTP_BIND:-127.0.0.1}:${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      # Read-only, code only: Caddy serves static files and forwards PHP to FPM.
+      - code:/var/www/dolibarr:ro
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # TLS certificates and keys (keep them: ACME rate limits).
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      # Internal :8080 site: any 2xx/3xx means Caddy + PHP + Dolibarr answer
+      # (a redirect to the installer before setup has run).
+      test: ["CMD-SHELL", "curl -so /dev/null -w '%{http_code}' http://localhost:8080/index.php | grep -qE '^[23]'"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${CADDY_MEMORY_LIMIT:-256m}
+
+  # One-shot job: syncs the code, installs or upgrades Dolibarr and applies the
+  # environment. Safe to repeat; runs on every `up`. Starts as root to fix
+  # ownership, runs PHP as www-data (82).
+  setup:
+    <<: *doli-image
+    user: root
+    logging: *logging
+    depends_on:
+      dolibarr:
+        condition: service_healthy
+    environment:
+      <<: *doli-env
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-dolibarr}
+      DB_USER: ${DB_USER:-dolibarr}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DOLI_PROD: ${DOLI_PROD:-1}
+      DOLI_ADMIN_PASSWORD: ${DOLI_ADMIN_PASSWORD:?Set DOLI_ADMIN_PASSWORD in .env}
+      DOLI_LANG: ${DOLI_LANG:-es_CL}
+      DOLI_COUNTRY: ${DOLI_COUNTRY:-CL}
+      DOLI_CURRENCY: ${DOLI_CURRENCY:-CLP}
+      DOLI_COMPANY_NAME: ${DOLI_COMPANY_NAME:-Dolibarr}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes: *doli-volumes
+    entrypoint: ["sh", "/usr/local/share/stack/scripts/setup.sh"]
+    restart: "no"
+
+  # Runs Dolibarr's scheduled jobs (module "Scheduled jobs") every CRON_INTERVAL seconds.
+  cron:
+    <<: *doli-image
+    user: www-data
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *doli-env
+      CRON_INTERVAL: ${CRON_INTERVAL:-300}
+    volumes: *doli-volumes
+    entrypoint: ["sh", "/usr/local/share/stack/scripts/cron.sh"]
+    healthcheck:
+      test: ["CMD", "sh", "/usr/local/share/stack/scripts/cron.sh", "health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: ${CRON_MEMORY_LIMIT:-512m}
+
+  # Optional (profile "backup"): DB dump + documents/conf/custom every
+  # BACKUP_INTERVAL_HOURS, kept BACKUP_KEEP_DAYS days in the `backups` volume
+  # (overrides/local-dirs.yaml puts them in a local directory instead).
+  backup:
+    image: mariadb:${MARIADB_VERSION:-12.3}
+    profiles: ["backup"]
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-dolibarr}
+      DB_USER: ${DB_USER:-dolibarr}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      # Read-write so `backup.sh restore` can put the files back.
+      - code:/var/www/dolibarr
+      - documents:/var/www/documents
+      - backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["bash", "/usr/local/bin/backup.sh"]
+    healthcheck:
+      test: ["CMD", "bash", "/usr/local/bin/backup.sh", "health"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+    deploy:
+      resources:
+        limits:
+          memory: ${BACKUP_MEMORY_LIMIT:-512m}
+
+  # Optional (profile "mailpit", development): catches all outgoing mail.
+  # Set SMTP_HOST=mailpit and SMTP_PORT=1025; web UI on MAILPIT_PORT.
+  mailpit:
+    image: axllent/mailpit:${MAILPIT_VERSION:-v1.31}
+    profiles: ["mailpit"]
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${MAILPIT_PORT:-8025}:8025"
+
+volumes:
+  db_data:
+  code:
+  documents:
+  caddy_data:
+  caddy_config:
+  backups:

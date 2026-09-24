@@ -1,0 +1,47 @@
+# Keep the stack's data in local directories instead of named volumes, so it
+# is visible from the host (and easy to include in host-level backups).
+#
+# In .env:
+#   COMPOSE_FILE=compose.yaml:overrides/local-dirs.yaml
+#   DATA_DIR=./data        # optional, default ./data (relative to compose.yaml)
+#
+# Only the directories you keep here change; delete the lines you don't need
+# (e.g. keep just `documents` and `backups`). Existing data in the named
+# volumes is NOT moved: switch before the first `up`, or restore a backup
+# afterwards.
+# On macOS, bind mounts are slower than named volumes (mostly for code), and
+# files created by root show as root-owned (writes still work). On Linux,
+# Docker creates missing directories as root and the containers fix ownership
+# themselves; backup files are root-owned with mode 0600.
+
+services:
+  db:
+    volumes:
+      - ${DATA_DIR:-./data}/db:/var/lib/mysql
+
+  dolibarr:
+    volumes:
+      - ${DATA_DIR:-./data}/code:/var/www/dolibarr
+      - ${DATA_DIR:-./data}/documents:/var/www/documents
+
+  caddy:
+    volumes:
+      - ${DATA_DIR:-./data}/code:/var/www/dolibarr:ro
+      - ${DATA_DIR:-./data}/caddy/data:/data
+      - ${DATA_DIR:-./data}/caddy/config:/config
+
+  setup:
+    volumes:
+      - ${DATA_DIR:-./data}/code:/var/www/dolibarr
+      - ${DATA_DIR:-./data}/documents:/var/www/documents
+
+  cron:
+    volumes:
+      - ${DATA_DIR:-./data}/code:/var/www/dolibarr
+      - ${DATA_DIR:-./data}/documents:/var/www/documents
+
+  backup:
+    volumes:
+      - ${DATA_DIR:-./data}/code:/var/www/dolibarr
+      - ${DATA_DIR:-./data}/documents:/var/www/documents
+      - ${DATA_DIR:-./data}/backups:/backups
