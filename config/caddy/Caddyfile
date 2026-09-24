@@ -8,6 +8,8 @@
 		# Behind a reverse proxy on a private network, log the real client IP
 		# (X-Forwarded-For) and trust X-Forwarded-Proto for HTTPS detection.
 		trusted_proxies static private_ranges
+		# Client IP = the right-most untrusted address (can't be spoofed).
+		trusted_proxies_strict
 	}
 }
 
@@ -45,7 +47,10 @@
 		@sensitive path_regexp \.(log|sql|sh|lock|dist|md)$
 		respond @sensitive 403
 
-		php_fastcgi dolibarr:9000
+		# PHP's REMOTE_ADDR is the client, not the proxy in front (e.g. Traefik).
+		php_fastcgi dolibarr:9000 {
+			env REMOTE_ADDR {client_ip}
+		}
 
 		@static path *.css *.js *.mjs *.gif *.ico *.jpg *.jpeg *.png *.svg *.webp *.avif *.woff *.woff2 *.ttf *.eot
 		header @static Cache-Control "public, max-age=604800"
