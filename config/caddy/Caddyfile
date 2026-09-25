@@ -13,6 +13,16 @@
 	}
 }
 
+# Proxy headers that PHP apps read directly (order IPs, login logs...)
+# instead of REMOTE_ADDR: only the real client IP, never what the client
+# sent (php_fastcgi would pass the whole, forgeable X-Forwarded-For chain).
+(client_ip_headers) {
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	header_up -Client-Ip
+	header_up -Cf-Connecting-Ip
+}
+
 (dolibarr) {
 	# Code only: documents live outside the web root and are served by
 	# document.php / viewimage.php.
@@ -50,6 +60,7 @@
 		# PHP's REMOTE_ADDR is the client, not the proxy in front (e.g. Traefik).
 		php_fastcgi dolibarr:9000 {
 			env REMOTE_ADDR {client_ip}
+			import client_ip_headers
 		}
 
 		@static path *.css *.js *.mjs *.gif *.ico *.jpg *.jpeg *.png *.svg *.webp *.avif *.woff *.woff2 *.ttf *.eot

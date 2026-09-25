@@ -219,6 +219,10 @@ Notes:
 Security
 --------
 
+- Client IP headers: PHP gets only the real client IP (as Caddy sees it) in
+  `REMOTE_ADDR`, `X-Forwarded-For` and `X-Real-IP`, and no `Client-Ip` or
+  `Cf-Connecting-Ip` (a client could forge them): Dolibarr's event log
+  (logins...) uses `X-Forwarded-For`, `Client-Ip` or `Cf-Connecting-Ip`.
 - No default secrets: compose fails if the required passwords are missing. The
   development template uses public passwords; never use it on a server.
 - PHP errors are never shown to visitors (`display_errors` off unless
