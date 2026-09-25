@@ -36,7 +36,8 @@ docker compose up -d
 docker compose logs -f setup   # wait for "==> Done"
 ```
 
-- Dolibarr: http://localhost:8106 (user `admin`, password `admin12345`)
+- Dolibarr: http://localhost:8106 (user `admin`, password `admin12345`; a
+  login, `DOLI_ADMIN_LOGIN`, not an email)
 - Mailpit (every email Dolibarr sends): http://localhost:8025
 
 Production
@@ -87,6 +88,8 @@ Volumes:
 - Database older than the code: runs Dolibarr's upgrade scripts
   (`upgrade.php`, `upgrade2.php`, `step5.php`), so **upgrading Dolibarr is
   changing `DOLI_VERSION` and running `docker compose up -d`** (back up first).
+  The migration logs "no such table" and "duplicate column" errors for
+  modules that aren't enabled: that's normal, Dolibarr tolerates them.
 - On every run, writes `htdocs/conf/conf.php` from the environment (URL,
   database, production mode), keeping the values generated at install time
   (instance id...), and, when `SMTP_HOST` is set, the email settings from
@@ -212,7 +215,8 @@ Notes:
   recommended by Dolibarr's security page; features that need them (such as
   the built-in database backup page) don't work — use the `backup` service.
 - The IMAP and LDAP PHP extensions are not included (email collector through
-  the native extension, LDAP authentication).
+  the native extension, LDAP authentication); IMAP was removed from PHP's
+  core in 8.4.
 - From inside the containers, the host machine is reachable as
   `host.docker.internal`.
 
