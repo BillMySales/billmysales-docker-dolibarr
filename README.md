@@ -45,8 +45,9 @@ Production
 
 ```shell
 cp .env.prod.example .env
-# Fill in DOLI_URL, SITE_ADDRESS, DB_PASSWORD, DB_ROOT_PASSWORD,
-# DOLI_ADMIN_PASSWORD and the SMTP_* values.
+# Fill in DOLI_URL, SITE_ADDRESS, DB_PASSWORD, DB_ROOT_PASSWORD and
+# DOLI_ADMIN_PASSWORD.
+# Recommended: the SMTP_* values (without SMTP_HOST no emails are sent).
 docker compose up -d
 ```
 
@@ -55,6 +56,8 @@ docker compose up -d
 - Behind an existing Traefik (no host ports), use `overrides/traefik.yaml`
   (see [Overrides](#overrides)).
 - Compose refuses to start while a required value is missing.
+- Configure SMTP (recommended, not required): without `SMTP_HOST` no emails
+  are sent (the image has no local mail server).
 - The `backup` profile is enabled by default in the production template.
 
 Services
@@ -179,13 +182,16 @@ Every variable is documented in `.env.prod.example`. Main groups:
 - **Site and network**: `DOLI_URL`, `SITE_ADDRESS`, `HTTP_BIND`, `HTTP_PORT`,
   `HTTPS_PORT`.
 - **Credentials**: `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `DOLI_ADMIN_PASSWORD`
-  (required), `DOLI_ADMIN_LOGIN`.
+  (required), `DOLI_ADMIN_LOGIN`. The admin login and password are
+  only used by the installer: changing them later doesn't change the account. `DOLI_ADMIN_LOGIN` is also
+  the user `cron` runs scheduled jobs as, so it must stay an existing user.
 - **Company** (first install only): `DOLI_COMPANY_NAME`, `DOLI_LANG`,
-  `DOLI_COUNTRY`, `DOLI_CURRENCY`; `PHP_TIMEZONE`.
+  `DOLI_COUNTRY`, `DOLI_CURRENCY`.
 - **Versions**: `DOLI_VERSION` + `DOLI_SHA256`, `PHP_VERSION`, `DOLI_IMAGE`,
   `CADDY_VERSION`, `MARIADB_VERSION`.
 - **Dolibarr / PHP**: `DOLI_PROD`, `PHP_MEMORY_LIMIT`, `UPLOAD_MAX_SIZE` (PHP
-  and Caddy), `PHP_FPM_MAX_CHILDREN` and the rest of the FPM pool.
+  and Caddy), `PHP_FPM_MAX_CHILDREN` and the rest of the FPM pool,
+  `PHP_TIMEZONE` (PHP's `date.timezone`, on every start).
 - **Mail**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`,
   `SMTP_PASSWORD`, `SMTP_FROM`.
 - **Scheduled jobs**: `CRON_INTERVAL` (seconds, default 300).
