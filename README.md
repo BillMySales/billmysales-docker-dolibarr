@@ -24,7 +24,7 @@ Supported versions
 Only these combinations are supported: each one was validated with a fresh
 install, a second `up -d` (`setup` safe to repeat), and the BillMySales
 module's end-to-end tests, which log in to the back office and validate and
-pay an invoice (2026-09-29). Other combinations may work by changing the
+pay an invoice. Other combinations may work by changing the
 variables, but aren't validated.
 
 | Dolibarr (`DOLI_VERSION`) | PHP (`PHP_VERSION`) | PHP range Dolibarr documents |
@@ -275,7 +275,7 @@ Security
 Validation
 ----------
 
-What was checked for this stack (2026-09-24):
+What was checked for this stack:
 
 - Clean start (`down -v` + `up -d`, image already built) in about 20 s: every
   service `healthy`, `setup` `Exited (0)`; a second run makes no changes.
