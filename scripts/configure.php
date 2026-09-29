@@ -56,7 +56,12 @@ if (!getDolGlobalString('DOCKER_STACK_INITIALIZED')) {
     // Scheduled jobs, run by the `cron` service.
     $user = new User($db);
     $user->fetch(0, getenv('DOLI_ADMIN_LOGIN') ?: 'admin');
-    $user->loadRights();
+    // loadRights() replaced getrights() in Dolibarr 20.
+    if (method_exists($user, 'loadRights')) {
+        $user->loadRights();
+    } else {
+        $user->getrights();
+    }
     $result = activateModule('modCron');
     if (!empty($result['errors'])) {
         fwrite(STDERR, implode("\n", $result['errors']) . "\n");

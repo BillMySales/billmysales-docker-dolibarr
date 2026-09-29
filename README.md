@@ -18,6 +18,29 @@ one release behind. `image/Dockerfile` puts the official release archive on
 `php:<ver>-fpm-alpine`, verified with SHA-256 (372 MB). Dolibarr 24 supports
 PHP 7.2 to 8.5.
 
+Supported versions
+------------------
+
+Only these combinations are supported: each one was validated with a fresh
+install, a second `up -d` (`setup` safe to repeat), and the BillMySales
+module's end-to-end tests, which log in to the back office and validate and
+pay an invoice (2026-09-29). Other combinations may work by changing the
+variables, but aren't validated.
+
+| Dolibarr (`DOLI_VERSION`) | PHP (`PHP_VERSION`) | PHP range Dolibarr documents |
+|---------------------------|---------------------|------------------------------|
+| 19.0.4                    | 7.4 and 8.2         | 7.1 to 8.2                   |
+| 20.0.4                    | 8.2                 | 7.1 to 8.2                   |
+| 21.0.4                    | 8.3                 | 7.1 to 8.3                   |
+| 22.0.5                    | 8.4                 | 7.1 to 8.4                   |
+| 23.0.4                    | 8.4                 | 7.2 to 8.4                   |
+| 24.0.1 (default)          | 8.5                 | 7.2 to 8.5                   |
+
+Set `DOLI_SHA256` to the archive's checksum, or to an empty value to skip
+the check, for a version other than the default. `setup` runs on PHP 7.4
+and on Dolibarr versions before 20 (no PHP 8 functions, and `getrights()`
+where `loadRights()` doesn't exist yet).
+
 Requirements
 ------------
 

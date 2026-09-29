@@ -14,7 +14,7 @@ if (is_file($file)) {
     // Read the existing values without leaking them into this scope.
     $current = (static function (string $file): array {
         include $file;
-        return array_filter(get_defined_vars(), static fn ($k) => str_starts_with($k, 'dolibarr_'), ARRAY_FILTER_USE_KEY);
+        return array_filter(get_defined_vars(), static fn ($k) => strpos($k, 'dolibarr_') === 0, ARRAY_FILTER_USE_KEY);
     })($file);
 }
 
